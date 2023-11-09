@@ -34,16 +34,21 @@ main() {
         exit
     fi
 
-    if ! command -v curl 2> /dev/null; then
+    if ! command -v curl > /dev/null 2>&1; then
         err "Please install \`curl\`."
         exit 1
     fi
 
     while [[ $# -ne 0 ]]; do case "$1" in
         -c) # Certificate file
+            if [[ -z "$2" ]]; then
+                err "$1 requires an argument: certfile"
+                exit 1
+            fi
+
             if [[ -n "$cert" ]]; then
                 err "You cannot use -c twice."
-                exit
+                exit 1
             fi
 
             cert="$2"
@@ -54,7 +59,7 @@ main() {
                 exit 1
             fi
 
-            if ! head -1 "$cert" | grep -q "-----BEGIN CERTIFICATE-----"; then
+            if ! head -1 "$cert" | grep -q -- "-----BEGIN CERTIFICATE-----"; then
                 err "Invalid certificate file."
                 exit 1
             fi
@@ -63,6 +68,11 @@ main() {
             shift
             ;;
         -h) # Hostname
+            if [[ -z "$2" ]]; then
+                err "$1 requires an argument: hostname"
+                exit 1
+            fi
+
             if [[ -n "$hostname" ]]; then
                 err "You cannot use -h twice."
                 exit
@@ -71,7 +81,7 @@ main() {
             hostname="$2"
             unset cert
 
-            curl_opts+=(--data-urlencode "host=${hostname}")
+            curl_opts+=(--get --data "host=${hostname}")
             shift
             ;;
         -r) # Include root
@@ -91,9 +101,20 @@ main() {
 
     result=$(curl -Ss "${curl_opts[@]}" "$url")
     if [[ $? -ne 0 ]]; then
-        err "Unable to get certificate. Incorrect certfile or invalid hostname."
+        err "Unable to reach $url"
         exit 1
     fi
+
+    case "$result" in
+        Unable*)
+            err "Cannot resolve ${hostname}"
+            exit 1
+            ;;
+        Failed*)
+            err "Upstream unable to parse the certificate."
+            exit 1
+            ;;
+    esac
 
     echo "$result"
 }
